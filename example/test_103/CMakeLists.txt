@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.6)
-project(test_003)
+project(test_103)
 
 set(RPC_INCLUDE_DIR             ${CMAKE_HOME_DIRECTORY}/include/)
 set(ASIO_INCLUDE_DIR            ${CMAKE_HOME_DIRECTORY}/third/asio-1.18.1/include/)
@@ -34,6 +34,5 @@ file(GLOB CLIENT_SOURCE_FILES ./src/*.cpp ./src/*.h ./src/client/*.cpp ./src/cli
 file(GLOB CORO_LIB_SOURCE_FILES ${CPPCORO_INCLUDE_DIR}/../lib/*.cpp)
 
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_HOME_DIRECTORY}/bin/)
-add_executable(${PROJECT_NAME}_server ${SERVER_SOURCE_FILES})
 add_executable(${PROJECT_NAME}_client ${CLIENT_SOURCE_FILES} )
 target_link_libraries(${PROJECT_NAME}_client Synchronization.lib)

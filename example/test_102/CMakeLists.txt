@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.6)
-project(test_001)
+project(test_102)
 
 set(RPC_INCLUDE_DIR             ${CMAKE_HOME_DIRECTORY}/include/)
 set(ASIO_INCLUDE_DIR            ${CMAKE_HOME_DIRECTORY}/third/asio-1.18.1/include/)
@@ -29,5 +29,4 @@ file(GLOB SERVER_SOURCE_FILES ./src/*.cpp ./src/*.h ./src/server/*.cpp ./src/ser
 file(GLOB CLIENT_SOURCE_FILES ./src/*.cpp ./src/*.h ./src/client/*.cpp ./src/client/*.h)
 
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_HOME_DIRECTORY}/bin/)
-add_executable(${PROJECT_NAME}_server ${SERVER_SOURCE_FILES})
 add_executable(${PROJECT_NAME}_client ${CLIENT_SOURCE_FILES})
