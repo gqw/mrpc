@@ -33,13 +33,15 @@ template <typename T>
 struct awaitable_signature;
 
 template <typename T, typename Executor>
-struct awaitable_signature<awaitable<T, Executor>> {
-    typedef void type(std::exception_ptr, T);
+struct awaitable_signature<awaitable<T, Executor>>
+{
+  typedef void type(std::exception_ptr, T);
 };
 
 template <typename Executor>
-struct awaitable_signature<awaitable<void, Executor>> {
-    typedef void type(std::exception_ptr);
+struct awaitable_signature<awaitable<void, Executor>>
+{
+  typedef void type(std::exception_ptr);
 };
 
 } // namespace detail
@@ -95,18 +97,18 @@ struct awaitable_signature<awaitable<void, Executor>> {
  * @endcode
  */
 template <typename Executor, typename T, typename AwaitableExecutor,
-          ASIO_COMPLETION_TOKEN_FOR(
-              void(std::exception_ptr, T)) CompletionToken
-          ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(Executor)>
+    ASIO_COMPLETION_TOKEN_FOR(
+      void(std::exception_ptr, T)) CompletionToken
+        ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(Executor)>
 inline ASIO_INITFN_AUTO_RESULT_TYPE(
     CompletionToken, void(std::exception_ptr, T))
 co_spawn(const Executor& ex, awaitable<T, AwaitableExecutor> a,
-         CompletionToken&& token
-         ASIO_DEFAULT_COMPLETION_TOKEN(Executor),
-         typename enable_if<
-         (is_executor<Executor>::value || execution::is_executor<Executor>::value)
-         && is_convertible<Executor, AwaitableExecutor>::value
-         >::type* = 0);
+    CompletionToken&& token
+      ASIO_DEFAULT_COMPLETION_TOKEN(Executor),
+    typename enable_if<
+      (is_executor<Executor>::value || execution::is_executor<Executor>::value)
+        && is_convertible<Executor, AwaitableExecutor>::value
+    >::type* = 0);
 
 /// Spawn a new coroutined-based thread of execution.
 /**
@@ -151,18 +153,18 @@ co_spawn(const Executor& ex, awaitable<T, AwaitableExecutor> a,
  * @endcode
  */
 template <typename Executor, typename AwaitableExecutor,
-          ASIO_COMPLETION_TOKEN_FOR(
-              void(std::exception_ptr)) CompletionToken
-          ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(Executor)>
+    ASIO_COMPLETION_TOKEN_FOR(
+      void(std::exception_ptr)) CompletionToken
+        ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(Executor)>
 inline ASIO_INITFN_AUTO_RESULT_TYPE(
     CompletionToken, void(std::exception_ptr))
 co_spawn(const Executor& ex, awaitable<void, AwaitableExecutor> a,
-         CompletionToken&& token
-         ASIO_DEFAULT_COMPLETION_TOKEN(Executor),
-         typename enable_if<
-         (is_executor<Executor>::value || execution::is_executor<Executor>::value)
-         && is_convertible<Executor, AwaitableExecutor>::value
-         >::type* = 0);
+    CompletionToken&& token
+      ASIO_DEFAULT_COMPLETION_TOKEN(Executor),
+    typename enable_if<
+      (is_executor<Executor>::value || execution::is_executor<Executor>::value)
+        && is_convertible<Executor, AwaitableExecutor>::value
+    >::type* = 0);
 
 /// Spawn a new coroutined-based thread of execution.
 /**
@@ -215,21 +217,21 @@ co_spawn(const Executor& ex, awaitable<void, AwaitableExecutor> a,
  * @endcode
  */
 template <typename ExecutionContext, typename T, typename AwaitableExecutor,
-          ASIO_COMPLETION_TOKEN_FOR(
-              void(std::exception_ptr, T)) CompletionToken
-          ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(
-              typename ExecutionContext::executor_type)>
+    ASIO_COMPLETION_TOKEN_FOR(
+      void(std::exception_ptr, T)) CompletionToken
+        ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(
+          typename ExecutionContext::executor_type)>
 inline ASIO_INITFN_AUTO_RESULT_TYPE(
     CompletionToken, void(std::exception_ptr, T))
 co_spawn(ExecutionContext& ctx, awaitable<T, AwaitableExecutor> a,
-         CompletionToken&& token
-         ASIO_DEFAULT_COMPLETION_TOKEN(
-             typename ExecutionContext::executor_type),
-         typename enable_if<
-         is_convertible<ExecutionContext&, execution_context&>::value
-         && is_convertible<typename ExecutionContext::executor_type,
-         AwaitableExecutor>::value
-         >::type* = 0);
+    CompletionToken&& token
+      ASIO_DEFAULT_COMPLETION_TOKEN(
+        typename ExecutionContext::executor_type),
+    typename enable_if<
+      is_convertible<ExecutionContext&, execution_context&>::value
+        && is_convertible<typename ExecutionContext::executor_type,
+          AwaitableExecutor>::value
+    >::type* = 0);
 
 /// Spawn a new coroutined-based thread of execution.
 /**
@@ -274,21 +276,21 @@ co_spawn(ExecutionContext& ctx, awaitable<T, AwaitableExecutor> a,
  * @endcode
  */
 template <typename ExecutionContext, typename AwaitableExecutor,
-          ASIO_COMPLETION_TOKEN_FOR(
-              void(std::exception_ptr)) CompletionToken
-          ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(
-              typename ExecutionContext::executor_type)>
+    ASIO_COMPLETION_TOKEN_FOR(
+      void(std::exception_ptr)) CompletionToken
+        ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(
+          typename ExecutionContext::executor_type)>
 inline ASIO_INITFN_AUTO_RESULT_TYPE(
     CompletionToken, void(std::exception_ptr))
 co_spawn(ExecutionContext& ctx, awaitable<void, AwaitableExecutor> a,
-         CompletionToken&& token
-         ASIO_DEFAULT_COMPLETION_TOKEN(
-             typename ExecutionContext::executor_type),
-         typename enable_if<
-         is_convertible<ExecutionContext&, execution_context&>::value
-         && is_convertible<typename ExecutionContext::executor_type,
-         AwaitableExecutor>::value
-         >::type* = 0);
+    CompletionToken&& token
+      ASIO_DEFAULT_COMPLETION_TOKEN(
+        typename ExecutionContext::executor_type),
+    typename enable_if<
+      is_convertible<ExecutionContext&, execution_context&>::value
+        && is_convertible<typename ExecutionContext::executor_type,
+          AwaitableExecutor>::value
+    >::type* = 0);
 
 /// Spawn a new coroutined-based thread of execution.
 /**
@@ -361,17 +363,17 @@ co_spawn(ExecutionContext& ctx, awaitable<void, AwaitableExecutor> a,
  * @endcode
  */
 template <typename Executor, typename F,
-          ASIO_COMPLETION_TOKEN_FOR(typename detail::awaitable_signature<
-                                        typename result_of<F()>::type>::type) CompletionToken
-          ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(Executor)>
+    ASIO_COMPLETION_TOKEN_FOR(typename detail::awaitable_signature<
+      typename result_of<F()>::type>::type) CompletionToken
+        ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(Executor)>
 ASIO_INITFN_AUTO_RESULT_TYPE(CompletionToken,
-                             typename detail::awaitable_signature<typename result_of<F()>::type>::type)
+    typename detail::awaitable_signature<typename result_of<F()>::type>::type)
 co_spawn(const Executor& ex, F&& f,
-         CompletionToken&& token
-         ASIO_DEFAULT_COMPLETION_TOKEN(Executor),
-         typename enable_if<
-         is_executor<Executor>::value || execution::is_executor<Executor>::value
-         >::type* = 0);
+    CompletionToken&& token
+      ASIO_DEFAULT_COMPLETION_TOKEN(Executor),
+    typename enable_if<
+      is_executor<Executor>::value || execution::is_executor<Executor>::value
+    >::type* = 0);
 
 /// Spawn a new coroutined-based thread of execution.
 /**
@@ -444,19 +446,19 @@ co_spawn(const Executor& ex, F&& f,
  * @endcode
  */
 template <typename ExecutionContext, typename F,
-          ASIO_COMPLETION_TOKEN_FOR(typename detail::awaitable_signature<
-                                        typename result_of<F()>::type>::type) CompletionToken
-          ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(
-              typename ExecutionContext::executor_type)>
+    ASIO_COMPLETION_TOKEN_FOR(typename detail::awaitable_signature<
+      typename result_of<F()>::type>::type) CompletionToken
+        ASIO_DEFAULT_COMPLETION_TOKEN_TYPE(
+          typename ExecutionContext::executor_type)>
 ASIO_INITFN_AUTO_RESULT_TYPE(CompletionToken,
-                             typename detail::awaitable_signature<typename result_of<F()>::type>::type)
+    typename detail::awaitable_signature<typename result_of<F()>::type>::type)
 co_spawn(ExecutionContext& ctx, F&& f,
-         CompletionToken&& token
-         ASIO_DEFAULT_COMPLETION_TOKEN(
-             typename ExecutionContext::executor_type),
-         typename enable_if<
-         is_convertible<ExecutionContext&, execution_context&>::value
-         >::type* = 0);
+    CompletionToken&& token
+      ASIO_DEFAULT_COMPLETION_TOKEN(
+        typename ExecutionContext::executor_type),
+    typename enable_if<
+      is_convertible<ExecutionContext&, execution_context&>::value
+    >::type* = 0);
 
 } // namespace asio
 

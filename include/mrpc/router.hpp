@@ -1,3 +1,6 @@
+#ifndef MRPC_ROUTER_HPP
+#define MRPC_ROUTER_HPP
+
 #pragma once
 
 #include <chrono>
@@ -113,57 +116,9 @@ class router {
     template<typename Function, typename SelfClass>
     static bool invoke_callback(Function f, SelfClass* self,
                                 const std::shared_ptr<connection>& conn,
+								const std::string& func_name,
                                 msg_id_t id,
-                                const std::string& buffer) {
-
-        using noclass_tp_type = std::tuple<const std::shared_ptr<connection>&>;
-        using class_tp_type = std::tuple<SelfClass*, const std::shared_ptr<connection>&>;
-        using tp_header_type = std::conditional_t<std::is_null_pointer_v<SelfClass>, noclass_tp_type, class_tp_type>;
-        bool is_no_response = id.msg_type & (1 << MSG_IS_NO_RESPONSE);
-
-        if (id.msg_type & (1 << MSG_FMT_RAW)) {
-            if constexpr (function_traits<Function>::argc == 2) {
-                nlohmann::json jret;
-                using first_p_type = std::tuple_element_t<0, function_traits<Function>::args_tuple>;
-                using second_p_type = std::tuple_element_t<1, function_traits<Function>::args_tuple>;
-                // 检查前两个参数类型是否为connection 和 string
-                if constexpr (std::is_same_v<first_p_type, connection::cptr> && std::is_same_v<second_p_type, std::string>) {
-                    if constexpr (std::is_void_v<function_traits<Function>::return_type>) {
-                        f(conn, buffer);
-                    } else {
-                        jret = f(conn, buffer);
-                    }
-                    return !is_no_response ? conn->response(id, status::ok, "ok", jret) : true;
-                }
-            }
-            return !is_no_response ? conn->response(id, status::internal_server_error, "internal error", nullptr) : true;
-        }
-
-        function_traits<Function>::args_tuple args;
-        nlohmann::json json = decode(id.msg_type, buffer);
-        if (json.size() < function_traits<Function>::argc) {
-            // 为了兼容性考虑，函数参数大于接受的参数，自动补全缺失的参数
-            LOG_WARN("msg: {} parameter not full", id);
-            parameter_extend(json, args, std::make_index_sequence<function_traits<Function>::argc> {});
-        }
-        LOG_TRACE("recv msg: {}, content: {}", id, json.dump());
-        nlohmann::from_json(json, args);
-
-        std::unique_ptr<tp_header_type> tp;
-        if constexpr (std::is_null_pointer_v<SelfClass>) {
-            tp = std::make_unique<tp_header_type>(conn);
-        } else {
-            tp = std::make_unique<tp_header_type>(self, conn);
-        }
-        nlohmann::json jret;
-        if constexpr (std::is_void_v<function_traits<Function>::return_type>) {
-            std::apply(f, std::tuple_cat(std::move(*tp), std::move(args)));
-        } else {
-            jret = std::apply(f, std::tuple_cat(std::move(*tp), std::move(args)));
-        }
-        return !is_no_response ? conn->response(id, status::ok, "ok", jret) : true;
-    }
-
+                                const std::string& buffer);
     static nlohmann::json decode(uint32_t msg_type, const std::string& buffer) {
         nlohmann::json json;
         if (msg_type & (1 << MSG_FMT_JSON)) {
@@ -183,8 +138,8 @@ class router {
     template<typename Function>
     void reg_handle(const std::string& name, Function f) {
         auto h = hash(name);
-        invokes_[h] = { name, [f](const std::shared_ptr<connection>& conn, msg_id_t id, const std::string& buffer) {
-            return invoke_callback<Function, nullptr_t>(f, nullptr, conn, id, buffer);
+        invokes_[h] = { name, [f](const std::shared_ptr<connection>& conn, const std::string& func_name, msg_id_t id, const std::string& buffer) {
+            return invoke_callback<Function, std::nullptr_t>(f, nullptr, conn, func_name, id, buffer);
         }
                       };
     }
@@ -192,18 +147,23 @@ class router {
     template<typename Function, typename SelfClass>
     void reg_handle(const std::string& name, Function f, SelfClass* self) {
         auto h = hash(name);
-        invokes_[h] = { name, [f, self](const std::shared_ptr<connection>& conn, msg_id_t id, const std::string& buffer) {
-            return invoke_callback<Function, SelfClass>(f, self, conn, id, buffer);
+        invokes_[h] = { name, [f, self](const std::shared_ptr<connection>& conn, const std::string& func_name, msg_id_t id, const std::string& buffer) {
+            return invoke_callback<Function, SelfClass>(f, self, conn, func_name, id, buffer);
         }
                       };
     }
 
     template<typename Function>
-    void reg_handle(const std::string& name, Function f, asio::io_context& io) {
+    void reg_handle(const std::string& name, Function f, std::weak_ptr<asio::io_context> wio) {
         auto h = hash(name);
-        invokes_[h] = { name, [f, &io](const std::shared_ptr<connection>& conn, msg_id_t id, const std::string& buffer) {
-            io.dispatch([f, conn, id, buffer = std::move(buffer)]() {
-                invoke_callback<Function, nullptr_t>(f, nullptr, conn, id, buffer);
+        invokes_[h] = { name, [f, wio](const std::shared_ptr<connection>& conn, const std::string& func_name, msg_id_t id, const std::string& buffer) {
+			auto io = wio.lock();
+			if (io == nullptr) {
+				LOG_WARN("call invoke after shutdown: {}({})", func_name, id);
+				return false;
+			}
+            io->dispatch([f, conn, func_name, id, buffer = std::move(buffer)]() {
+                invoke_callback<Function, std::nullptr_t>(f, nullptr, conn, func_name, id, buffer);
             });
             return true;
         }
@@ -211,11 +171,16 @@ class router {
     }
 
     template<typename Function, typename SelfClass>
-    void reg_handle(const std::string& name, Function f, SelfClass* self, asio::io_context& io) {
+    void reg_handle(const std::string& name, Function f, SelfClass* self, std::weak_ptr<asio::io_context> wio) {
         auto h = hash(name);
-        invokes_[h] = { name, [f, self, &io](const std::shared_ptr<connection>& conn, msg_id_t id, const std::string& buffer) {
-            io.dispatch([f, self, conn, id, buffer = std::move(buffer)]() {
-                invoke_callback<Function, SelfClass>(f, self, conn, id, buffer);
+        invokes_[h] = { name, [f, self, wio](const std::shared_ptr<connection>& conn, const std::string& func_name, msg_id_t id, const std::string& buffer) {
+			auto io = wio.lock();
+			if (io == nullptr) {
+				LOG_WARN("call invoke after shutdown: {}({})", func_name, id);
+				return false;
+			}
+			io->dispatch([f, self, conn, func_name, id, buffer = std::move(buffer)]() {
+                invoke_callback<Function, SelfClass>(f, self, conn, func_name, id, buffer);
             });
             return true;
         }
@@ -245,8 +210,8 @@ class router {
                 LOG_ERROR("rpc invoke not found, {} ", id);
                 throw not_implemented;
             }
-            if (!iter->second.second(conn, id, buffer)) {
-                LOG_ERROR("rpc invoke function failed, {}({}) ", iter->second.first, id);
+            if (!iter->second.second(conn, iter->second.first, id, buffer)) {
+                LOG_ERROR("rpc invoke{}({}) function failed, return is false  ", iter->second.first, id);
                 throw internal_server_error;
             }
         } catch (int e) {
@@ -265,7 +230,7 @@ class router {
         }
     }
 
-    // copy from std::hash<string>, but always return 64bit value
+    // copy from std::hash<string>, but always return 64bit value && the max bit is 1
     static uint64_t hash(const std::string_view& key) {
         constexpr static uint64_t _FNV_offset_basis = 14695981039346656037ULL;
         constexpr static uint64_t _FNV_prime = 1099511628211ULL;
@@ -275,11 +240,13 @@ class router {
             _Val ^= static_cast<uint64_t>(c);
             _Val *= _FNV_prime;
         }
-        return (_Val | (1ull < 63));
+        auto ret =  (_Val | (1ull << 63));
+		// LOG_TRACE("{}'s hash: {}", key, _Val);
+		return ret;
     }
 
   private:
-    template<typename int I, typename JsonType, typename TupleType>
+    template<int I, typename JsonType, typename TupleType>
     static void parameter_append_op(JsonType& json, TupleType& tp) {
         if (I >= json.size()) {
             json.emplace_back(std::get<I>(tp));
@@ -294,6 +261,7 @@ class router {
 
   private:
     using invoke_type = std::function<bool (const std::shared_ptr<mrpc::connection>&,
+											const std::string&,
                                             msg_id_t,
                                             const std::string&)>;
     std::unordered_map<uint64_t, std::pair<std::string, invoke_type>> invokes_; // msg_id, <msg_name, invoke_func>
@@ -302,3 +270,5 @@ class router {
     std::unordered_map<uint64_t, std::shared_ptr<connection>> conns_;
 };
 } // namespace mrpc
+
+#endif // MRPC_ROUTER_HPP

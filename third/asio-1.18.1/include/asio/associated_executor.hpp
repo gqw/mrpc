@@ -27,24 +27,28 @@ namespace asio {
 namespace detail {
 
 template <typename T, typename E, typename = void>
-struct associated_executor_impl {
-    typedef void asio_associated_executor_is_unspecialised;
+struct associated_executor_impl
+{
+  typedef void asio_associated_executor_is_unspecialised;
 
-    typedef E type;
+  typedef E type;
 
-    static type get(const T&, const E& e = E()) ASIO_NOEXCEPT {
-        return e;
-    }
+  static type get(const T&, const E& e = E()) ASIO_NOEXCEPT
+  {
+    return e;
+  }
 };
 
 template <typename T, typename E>
 struct associated_executor_impl<T, E,
-           typename void_type<typename T::executor_type>::type> {
-    typedef typename T::executor_type type;
+  typename void_type<typename T::executor_type>::type>
+{
+  typedef typename T::executor_type type;
 
-    static type get(const T& t, const E& = E()) ASIO_NOEXCEPT {
-        return t.get_executor();
-    }
+  static type get(const T& t, const E& = E()) ASIO_NOEXCEPT
+  {
+    return t.get_executor();
+  }
 };
 
 } // namespace detail
@@ -71,18 +75,18 @@ struct associated_executor_impl<T, E,
 template <typename T, typename Executor = system_executor>
 struct associated_executor
 #if !defined(GENERATING_DOCUMENTATION)
-    : detail::associated_executor_impl<T, Executor>
+  : detail::associated_executor_impl<T, Executor>
 #endif // !defined(GENERATING_DOCUMENTATION)
 {
 #if defined(GENERATING_DOCUMENTATION)
-    /// If @c T has a nested type @c executor_type, <tt>T::executor_type</tt>.
-    /// Otherwise @c Executor.
-    typedef see_below type;
+  /// If @c T has a nested type @c executor_type, <tt>T::executor_type</tt>.
+  /// Otherwise @c Executor.
+  typedef see_below type;
 
-    /// If @c T has a nested type @c executor_type, returns
-    /// <tt>t.get_executor()</tt>. Otherwise returns @c ex.
-    static type get(const T& t,
-                    const Executor& ex = Executor()) ASIO_NOEXCEPT;
+  /// If @c T has a nested type @c executor_type, returns
+  /// <tt>t.get_executor()</tt>. Otherwise returns @c ex.
+  static type get(const T& t,
+      const Executor& ex = Executor()) ASIO_NOEXCEPT;
 #endif // defined(GENERATING_DOCUMENTATION)
 };
 
@@ -92,8 +96,9 @@ struct associated_executor
  */
 template <typename T>
 inline typename associated_executor<T>::type
-get_associated_executor(const T& t) ASIO_NOEXCEPT {
-    return associated_executor<T>::get(t);
+get_associated_executor(const T& t) ASIO_NOEXCEPT
+{
+  return associated_executor<T>::get(t);
 }
 
 /// Helper function to obtain an object's associated executor.
@@ -103,10 +108,11 @@ get_associated_executor(const T& t) ASIO_NOEXCEPT {
 template <typename T, typename Executor>
 inline typename associated_executor<T, Executor>::type
 get_associated_executor(const T& t, const Executor& ex,
-                        typename enable_if<
-                        is_executor<Executor>::value || execution::is_executor<Executor>::value
-                        >::type* = 0) ASIO_NOEXCEPT {
-    return associated_executor<T, Executor>::get(t, ex);
+    typename enable_if<
+      is_executor<Executor>::value || execution::is_executor<Executor>::value
+    >::type* = 0) ASIO_NOEXCEPT
+{
+  return associated_executor<T, Executor>::get(t, ex);
 }
 
 /// Helper function to obtain an object's associated executor.
@@ -116,11 +122,12 @@ get_associated_executor(const T& t, const Executor& ex,
  */
 template <typename T, typename ExecutionContext>
 inline typename associated_executor<T,
-       typename ExecutionContext::executor_type>::type
-       get_associated_executor(const T& t, ExecutionContext& ctx,
-                               typename enable_if<is_convertible<ExecutionContext&,
-execution_context&>::value>::type* = 0) ASIO_NOEXCEPT {
-    return associated_executor<T,
+  typename ExecutionContext::executor_type>::type
+get_associated_executor(const T& t, ExecutionContext& ctx,
+    typename enable_if<is_convertible<ExecutionContext&,
+      execution_context&>::value>::type* = 0) ASIO_NOEXCEPT
+{
+  return associated_executor<T,
     typename ExecutionContext::executor_type>::get(t, ctx.get_executor());
 }
 
@@ -134,19 +141,21 @@ using associated_executor_t = typename associated_executor<T, Executor>::type;
 namespace detail {
 
 template <typename T, typename E, typename = void>
-struct associated_executor_forwarding_base {
+struct associated_executor_forwarding_base
+{
 };
 
 template <typename T, typename E>
 struct associated_executor_forwarding_base<T, E,
-           typename enable_if<
-           is_same<
-           typename associated_executor<T,
-           E>::asio_associated_executor_is_unspecialised,
-           void
-           >::value
-           >::type> {
-    typedef void asio_associated_executor_is_unspecialised;
+    typename enable_if<
+      is_same<
+        typename associated_executor<T,
+          E>::asio_associated_executor_is_unspecialised,
+        void
+      >::value
+    >::type>
+{
+  typedef void asio_associated_executor_is_unspecialised;
 };
 
 } // namespace detail

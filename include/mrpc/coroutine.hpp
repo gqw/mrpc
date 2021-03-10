@@ -1,49 +1,36 @@
+#ifndef MRC_COROUTINE_HPP
+#define MRC_COROUTINE_HPP
+
 #pragma once
+
+#ifdef _USE_COROUTINE
 
 #ifdef WIN32
 #   include <experimental/coroutine>
+    namespace stdcoro = std::experimental;
 #else
 #   include <coroutine>
+    namespace stdcoro = std;
 #endif
 #include <exception>
 
 namespace mrpc {
 
-#ifdef _USE_COROUTINE
-
 template<typename T> class task_promise;
 template<typename T> class req_result;
-template<typename T = void>
-class task {
-  public:
-    using promise_type = task_promise<T>;
-    using value_type = T;
-    using cptr = const std::shared_ptr<T>&;
 
-  public:
-    task(std::experimental::coroutine_handle<promise_type> h) {
-
-    }
-
-    auto operator co_await() const & noexcept {
-        return task_awaitable{};
-    }
-
-  private:
-    std::experimental::coroutine_handle<promise_type> coroutine_;
-};
 
 template<typename T>
 struct task_awaitable {
     task_awaitable() {}
-    task_awaitable(std::function<void(std::experimental::coroutine_handle<>)> suspend_callback,
+    task_awaitable(std::function<void(stdcoro::coroutine_handle<>)> suspend_callback,
                    std::function<req_result<T>()> resume_callback)
         : suspend_callback_(suspend_callback)
         , resume_callback_(resume_callback) {
 
     }
 
-    void set_suspend_callback(std::function<void(std::experimental::coroutine_handle<>)> suspend_callback) {
+    void set_suspend_callback(std::function<void(stdcoro::coroutine_handle<>)> suspend_callback) {
         suspend_callback_ = suspend_callback;
     }
     void set_resume_callback(std::function<req_result<T>()> resume_callback) {
@@ -54,7 +41,7 @@ struct task_awaitable {
         return false;
     }
 
-    void await_suspend(std::experimental::coroutine_handle<> coroutine) {
+    void await_suspend(stdcoro::coroutine_handle<> coroutine) {
         suspend_callback_(coroutine);
         return;
     }
@@ -64,20 +51,38 @@ struct task_awaitable {
     }
 
   private:
-    std::function<void(std::experimental::coroutine_handle<>)> suspend_callback_;
+    std::function<void(stdcoro::coroutine_handle<>)> suspend_callback_;
     std::function<req_result<T>()> resume_callback_;
 };
 
+template<typename T = void>
+class task {
+  public:
+    using promise_type = task_promise<T>;
+    using value_type = T;
+    using cptr = const std::shared_ptr<T>&;
 
+  public:
+    task(stdcoro::coroutine_handle<promise_type> h) {
+
+    }
+
+    auto operator co_await() const & noexcept {
+        return task_awaitable<T>{};
+    }
+
+  private:
+    stdcoro::coroutine_handle<promise_type> coroutine_;
+};
 
 class task_promise_base {
   public:
     auto initial_suspend() {
-        return std::experimental::suspend_never{};
+        return stdcoro::suspend_never{};
     }
 
     auto final_suspend() {
-        return std::experimental::suspend_never{};
+        return stdcoro::suspend_never{};
     }
 
     void unhandled_exception() {
@@ -97,7 +102,7 @@ class task_promise final : public task_promise_base {
 
   public:
     task<T> get_return_object() noexcept {
-        return task<T>(std::experimental::coroutine_handle<task_promise>::from_promise(*this));
+        return task<T>(stdcoro::coroutine_handle<task_promise>::from_promise(*this));
     }
 
     void return_value(T value) {
@@ -113,7 +118,7 @@ class task_promise<void> final : public task_promise_base {
 
   public:
     task<void> get_return_object() noexcept {
-        return task<void>(std::experimental::coroutine_handle<task_promise>::from_promise(*this));
+        return task<void>(stdcoro::coroutine_handle<task_promise>::from_promise(*this));
     }
 
     void return_void() {
@@ -122,5 +127,8 @@ class task_promise<void> final : public task_promise_base {
 
 };
 
-#endif // _USE_COROUTINE
 } // namespace mrpc
+
+#endif // _USE_COROUTINE
+
+#endif // MRC_COROUTINE_HPP

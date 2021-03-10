@@ -33,9 +33,9 @@ enum asio_handler_allocate_is_no_longer_used {};
 enum asio_handler_deallocate_is_no_longer_used {};
 
 typedef asio_handler_allocate_is_no_longer_used
-asio_handler_allocate_is_deprecated;
+  asio_handler_allocate_is_deprecated;
 typedef asio_handler_deallocate_is_no_longer_used
-asio_handler_deallocate_is_deprecated;
+  asio_handler_deallocate_is_deprecated;
 
 #else // defined(ASIO_NO_DEPRECATED)
 

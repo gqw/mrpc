@@ -71,7 +71,7 @@ namespace asio {
 enum asio_handler_invoke_is_no_longer_used {};
 
 typedef asio_handler_invoke_is_no_longer_used
-asio_handler_invoke_is_deprecated;
+  asio_handler_invoke_is_deprecated;
 
 #else // defined(ASIO_NO_DEPRECATED)
 
@@ -82,21 +82,23 @@ typedef void asio_handler_invoke_is_deprecated;
 /// Default handler invocation hook used for non-const function objects.
 template <typename Function>
 inline asio_handler_invoke_is_deprecated
-asio_handler_invoke(Function& function, ...) {
-    function();
+asio_handler_invoke(Function& function, ...)
+{
+  function();
 #if defined(ASIO_NO_DEPRECATED)
-    return asio_handler_invoke_is_no_longer_used();
+  return asio_handler_invoke_is_no_longer_used();
 #endif // defined(ASIO_NO_DEPRECATED)
 }
 
 /// Default handler invocation hook used for const function objects.
 template <typename Function>
 inline asio_handler_invoke_is_deprecated
-asio_handler_invoke(const Function& function, ...) {
-    Function tmp(function);
-    tmp();
+asio_handler_invoke(const Function& function, ...)
+{
+  Function tmp(function);
+  tmp();
 #if defined(ASIO_NO_DEPRECATED)
-    return asio_handler_invoke_is_no_longer_used();
+  return asio_handler_invoke_is_no_longer_used();
 #endif // defined(ASIO_NO_DEPRECATED)
 }
 

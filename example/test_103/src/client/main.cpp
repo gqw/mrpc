@@ -1,6 +1,6 @@
 #include <logger.hpp>
-#include <rpc/client.hpp>
-#include <rpc/coroutine.hpp>
+#include <mrpc/client.hpp>
+#include <mrpc/coroutine.hpp>
 
 #include <iostream>
 #include <thread>
@@ -13,7 +13,7 @@ task<void> test_coro2(connection::cptr conn, int thread_index, int s) {
     {
         auto ret = co_await conn->coro_call<int>("test", i);
 
-        if (ret.error_code() != ok || ret.value() != i + 1) {
+        if (ret.error_code() != ok || ret.value() != int(i + 1)) {
             LOG_WARN("{}-{} ret failed: {}-{} ({}<->{})", thread_index, s, ret.error_code(), ret.error_msg(), i, ret.value());
         } else {
             LOG_DEBUG("{}-{} ret: {}-{} ({}<->{})", thread_index, s, ret.error_code(), ret.error_msg(), i, ret.value());

@@ -42,8 +42,9 @@ namespace asio {
  * }
  * @endcode
  */
-inline bool asio_handler_is_continuation(...) {
-    return false;
+inline bool asio_handler_is_continuation(...)
+{
+  return false;
 }
 
 } // namespace asio

@@ -34,8 +34,8 @@ namespace asio {
  * @endcode
  */
 typedef basic_waitable_timer<
-chrono::high_resolution_clock>
-high_resolution_timer;
+    chrono::high_resolution_clock>
+  high_resolution_timer;
 
 } // namespace asio
 

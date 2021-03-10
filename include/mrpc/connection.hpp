@@ -1,3 +1,6 @@
+#ifndef MRPC_CONNECTION_HPP
+#define MRPC_CONNECTION_HPP
+
 #pragma once
 
 #include "router.hpp"
@@ -72,16 +75,16 @@ struct future_msg_info {
     std::promise<std::pair<msg_id_t, std::string>> promise;
 };
 
-class callback_t : asio::noncopyable, public std::enable_shared_from_this<callback_t> {
+class callback_t : public std::enable_shared_from_this<callback_t> {
   public:
     using callback_func_type = std::function<void(uint32_t err_code, const std::string& err_msg, const nlohmann::json& ret)>;
 
 #if (ASIO_VERSION >= 101800)
-    callback_t(asio::ip::tcp::socket::executor_type& ex,
+    callback_t(asio::ip::tcp::socket::executor_type ex,
                callback_func_type cb,
                size_t timeout)
         : timer_(ex)
-        , cb_(std::move(cb))
+        , cb_(cb)
         , timeout_(timeout) {
     }
 #else
@@ -139,7 +142,6 @@ class callback_t : asio::noncopyable, public std::enable_shared_from_this<callba
     callback_func_type cb_;
     size_t timeout_ = 0;
     bool has_timeout_ = false;
-    bool is_corotine_ = false;
 
     std::string rpc_name_;
 };
@@ -152,23 +154,29 @@ class connection : public std::enable_shared_from_this<connection> {
     friend struct awaitee;
 
     static const constexpr time_t DEFAULT_TIMEOUT = 5000; //milliseconds
-#ifdef _DEBUG
-    static const constexpr msg_type_fmt DEFAULT_MSG_FORMAT = MSG_FMT_JSON;
+
+#ifdef _MSG_FORMAT
+	static const constexpr msg_type_fmt DEFAULT_MSG_FORMAT = _MSG_FORMAT;
 #else
-    static const constexpr msg_type_fmt DEFAULT_MSG_FORMAT = MSG_FMT_MSGPACK;
+    #ifdef _DEBUG
+        static const constexpr msg_type_fmt DEFAULT_MSG_FORMAT = MSG_FMT_JSON;
+    #else
+        static const constexpr msg_type_fmt DEFAULT_MSG_FORMAT = MSG_FMT_MSGPACK;
+    #endif
 #endif
+
 
     using closed_callback_type = std::function<void(const std::shared_ptr<connection>&)>;
     using ptr = std::shared_ptr<connection>;
     using cptr = const std::shared_ptr<connection>&;
 
     connection(asio::ip::tcp::socket so, router& router)
-        : socket_(std::move(so))
-        , router_(router) {
+        : router_(router)
+        , socket_(std::move(so)) {
     }
 
 
-    router& router() {
+    mrpc::router& router() {
         return router_;
     }
     uint64_t conn_id() {
@@ -206,6 +214,7 @@ class connection : public std::enable_shared_from_this<connection> {
         msg_type_ &= ~(1 << MSG_IS_REQUEST);
         msg_type_ |= (1 << MSG_IS_RESPONSE);
 		id.msg_type = msg_type_;
+		LOG_TRACE("response, {}: {}", id, ret_data.dump());
         write(id, root);
         return true;
     }
@@ -244,13 +253,9 @@ class connection : public std::enable_shared_from_this<connection> {
     void notify(const std::string& rpc_name, Args&& ... args) {
         uint32_t msg_type = (1 << FMT) | (1 << MSG_IS_REQUEST) | (1 << MSG_IS_NO_RESPONSE);
         auto msg_id = router::hash(rpc_name);
-        uint64_t req_id = 0;
-        {
-            std::unique_lock<std::mutex> lock(cb_mtx_);
-            req_id = ++req_id_;
-        }
-		LOG_TRACE("notify, {}({})", rpc_name, msg_id);
-		write({ msg_type, msg_id, req_id }, nlohmann::json::array_t{ std::forward<Args>(args)... });
+		msg_id_t id{ msg_type, msg_id, 0ull };
+		LOG_TRACE("notify, {}({})", rpc_name, id);
+		write(id, nlohmann::json::array_t{ std::forward<Args>(args)... });
     }
 
     template<size_t TIMEOUT, typename RET = void, msg_type_fmt FMT = DEFAULT_MSG_FORMAT, typename... Args>
@@ -281,16 +286,18 @@ class connection : public std::enable_shared_from_this<connection> {
             std::unique_lock<std::mutex> lock(cb_mtx_);
             future_map_.emplace(req_id, std::move(future_msg));
         }
-		LOG_TRACE("async_call, {}({})", rpc_name, msg_id);
-		write({ msg_type, msg_id, req_id }, nlohmann::json::array_t{ std::forward<Args>(args)... });
+		msg_id_t id{ msg_type, msg_id, req_id };
+		LOG_TRACE("async_call, {}({})", rpc_name, id);
+		write(id, nlohmann::json::array_t{ std::forward<Args>(args)... });
         return std::make_tuple(req_id, std::move(future));
     }
 
     template<std::size_t TIMEOUT = DEFAULT_TIMEOUT, msg_type_fmt FMT = DEFAULT_MSG_FORMAT, typename... Args>
-    void async_call(callback_t::callback_func_type cb, const std::string& rpc_name, Args&&...args) {
+    void  async_call(callback_t::callback_func_type cb, const std::string& rpc_name, Args&&...args) {
         auto msg_id = router::hash(rpc_name);
         uint32_t msg_type = (1 << FMT) | (1 << MSG_IS_REQUEST) | (1 << MSG_IS_CALLBACK);
 #if ASIO_VERSION >= 101800
+        callback_t t(socket_.get_executor(), cb, TIMEOUT);
         auto callback = std::make_shared<callback_t>(socket_.get_executor(), cb, TIMEOUT);
 #else
         auto callback = std::make_shared<callback_t>(socket_.get_io_context(), cb, TIMEOUT);
@@ -305,23 +312,25 @@ class connection : public std::enable_shared_from_this<connection> {
             callback->set_rpc_name(rpc_name);
             callback_map_.emplace(req_id, std::move(callback));
         }
-		LOG_TRACE("async_call, {}({})", rpc_name, msg_id);
-		write({ msg_type, msg_id, req_id }, nlohmann::json::array_t{ std::forward<Args>(args)... });
+		msg_id_t id{ msg_type, msg_id, req_id };
+		LOG_TRACE("async_call, {}({})", rpc_name, id);
+		write(id, nlohmann::json::array_t{ std::forward<Args>(args)... });
         return;
     }
 
 #ifdef _USE_COROUTINE
     template<typename RET = void, msg_type_fmt FMT = DEFAULT_MSG_FORMAT, typename ...Args>
-    typename task_awaitable<RET> coro_call(const std::string& rpc_name, Args&&...args) {
+    task_awaitable<RET> coro_call(const std::string& rpc_name, Args&&...args) {
 
         uint64_t req_id = next_req_id();
         auto msg_id = router::hash(rpc_name);
 		uint32_t msg_type = ((1 << FMT) | (1 << MSG_IS_REQUEST) | (1 << MSG_IS_COROUTINE));
-		LOG_TRACE("coro_call, {}({})", rpc_name, msg_id);
-		write({ msg_type, msg_id, req_id }, nlohmann::json::array_t{ std::forward<Args>(args)... });
+		msg_id_t id{ msg_type, msg_id, req_id };
+		LOG_TRACE("coro_call, {}({})", rpc_name, id);
+		write(id, nlohmann::json::array_t{ std::forward<Args>(args)... });
 
 
-        auto suspend = [this, req_id](std::experimental::coroutine_handle<> h) {
+        auto suspend = [this, req_id](stdcoro::coroutine_handle<> h) {
             // on suspend
             std::unique_lock<std::mutex> lock(cb_mtx_);
             corotine_map_[req_id] = h;
@@ -409,7 +418,7 @@ class connection : public std::enable_shared_from_this<connection> {
 
         has_wait_ = true;
         std::unique_lock<std::mutex> lock(conn_mtx_);
-        bool result = conn_cond_.wait_for(lock, std::chrono::seconds(timeout),
+        /*bool result = */conn_cond_.wait_for(lock, std::chrono::seconds(timeout),
                                           [this] {return has_connected_.load(); });
         has_wait_ = false;
         return has_connected_;
@@ -431,6 +440,7 @@ class connection : public std::enable_shared_from_this<connection> {
                 on_closed();
                 return;
             }
+			LOG_DEBUG("recv *************: {}", req_id_);
             if (msg_len_ > MAX_MSG_BODY_LEN) {
                 on_closed();
                 LOG_ERROR("msg length over max: {}", msg_len_);
@@ -555,7 +565,8 @@ class connection : public std::enable_shared_from_this<connection> {
     }
 
     void on_coroutine_response(msg_id_t id) {
-        std::experimental::coroutine_handle<> h;
+#ifdef _USE_COROUTINE
+        stdcoro::coroutine_handle<> h;
         {
             std::lock_guard<std::mutex> lock(cb_mtx_);
             auto iter = corotine_map_.find(id.req_id);
@@ -567,6 +578,7 @@ class connection : public std::enable_shared_from_this<connection> {
             }
         }
         if (h) h.resume();
+#endif
     }
 
 	void write() {
@@ -582,12 +594,12 @@ class connection : public std::enable_shared_from_this<connection> {
 			auto& id = pair.first;
 			auto& data = pair.second;
 
-			uint32_t msg_len = static_cast<uint32_t>(data.length());
+			write_size_ = static_cast<uint32_t>(data.length());
 			buffers[0] = asio::buffer(&id.msg_type, sizeof(id.msg_type));
 			buffers[1] = asio::buffer(&id.msg_id, sizeof(id.msg_id));
 			buffers[2] = asio::buffer(&id.req_id, sizeof(id.req_id));
-			buffers[3] = asio::buffer(&msg_len, sizeof(msg_len));
-			buffers[4] = asio::buffer(data.data(), msg_len);
+			buffers[3] = asio::buffer(&write_size_, sizeof(write_size_));
+			buffers[4] = asio::buffer(data.data(), write_size_);
 		}
 		auto self(shared_from_this());
 		asio::async_write(socket_, buffers, [this, self](const std::error_code& ec, const size_t length) {
@@ -634,12 +646,14 @@ class connection : public std::enable_shared_from_this<connection> {
     std::mutex cb_mtx_;
     std::unordered_map<uint64_t, std::shared_ptr<future_msg_info>> future_map_;
     std::unordered_map<uint64_t, std::shared_ptr<callback_t>> callback_map_;
-    std::unordered_map<uint64_t, std::experimental::coroutine_handle<>> corotine_map_;
-
+#ifdef _USE_COROUTINE
+    std::unordered_map<uint64_t, stdcoro::coroutine_handle<>> corotine_map_;
+#endif
 	std::mutex write_mtx_;
 	std::deque<std::pair<msg_id_t, std::string>> write_queue_;
-
+	uint32_t write_size_ = 0;
     void* user_data_ = nullptr;
 };
 
 } // namespace mrpc
+#endif // MRPC_CONNECTION_HPP
