@@ -33,9 +33,11 @@ include_directories(
 )
 
 # add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_004)
-# add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_005)
+add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_005)
 
 add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_100)
-add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_101)
-add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_102)
-add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_103)
+# add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_101)
+# add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_102)
+# add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_103)
+add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_104)
+add_subdirectory(${CMAKE_HOME_DIRECTORY}/example/test_201)

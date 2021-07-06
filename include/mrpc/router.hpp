@@ -20,6 +20,16 @@
 #	define LOG_ERROR(fmt, ...)
 #endif // RPC_USE_LOG
 
+#if BYTE_ORDER == LITTLE_ENDIAN
+# define htonll(x) (uint64_t(htonl(uint32_t(x))) << 32 | htonl(uint32_t((x) >> 32)))
+# define ntohll(x) (uint64_t(ntohl(uint32_t(x))) << 32 | ntohl(uint32_t((x) >> 32)))
+#elif BYTE_ORDER == BIG_ENDIAN
+# define htonll(x) (x)
+# define ntohll(x) (x)
+#else
+static_assert(false, "not support endian");
+#endif
+
 namespace mrpc {
 struct awaitee;
 enum msg_type_bits {
@@ -66,7 +76,6 @@ enum status {
 };
 
 struct msg_id_t {
-    // message_type msg_type = message_type::MSG_NONE;
     uint32_t msg_type = 0;
     uint64_t msg_id = 0;
     uint64_t req_id = 0;
@@ -112,6 +121,15 @@ struct function_traits<ReturnType(ClassType::*)(Args...) const> : function_trait
 
 class connection;
 class router {
+    using invoke_type = std::function<bool (const std::shared_ptr<mrpc::connection>&,
+											const std::string&,
+                                            msg_id_t,
+                                            const std::string&)>;
+
+    using exception_callback_type = std::function<void (const std::shared_ptr<mrpc::connection>&,
+											int error_code,
+                                            msg_id_t,
+                                            const std::string&)>;
   public:
     template<typename Function, typename SelfClass>
     static bool invoke_callback(Function f, SelfClass* self,
@@ -187,11 +205,6 @@ class router {
                       };
     }
 
-    std::string query_msg_name(uint64_t msg_id) {
-        auto iter = invokes_.find(msg_id);
-        return iter == invokes_.end() ? "unknow" : iter->second.first;
-    }
-
     template<typename Connection>
     void route_request(const std::shared_ptr<Connection>& conn,
                        msg_id_t id,
@@ -208,6 +221,7 @@ class router {
             auto iter = invokes_.find(id.msg_id);
             if (iter == invokes_.end()) {
                 LOG_ERROR("rpc invoke not found, {} ", id);
+                if (exception_callback_) exception_callback_(conn, not_implemented, id, buffer);
                 throw not_implemented;
             }
             if (!iter->second.second(conn, iter->second.first, id, buffer)) {
@@ -231,7 +245,7 @@ class router {
     }
 
     // copy from std::hash<string>, but always return 64bit value && the max bit is 1
-    static uint64_t hash(const std::string_view& key) {
+    static uint64_t hash(std::string_view key) {
         constexpr static uint64_t _FNV_offset_basis = 14695981039346656037ULL;
         constexpr static uint64_t _FNV_prime = 1099511628211ULL;
         auto _Val = _FNV_offset_basis;
@@ -243,6 +257,25 @@ class router {
         auto ret =  (_Val | (1ull << 63));
 		// LOG_TRACE("{}'s hash: {}", key, _Val);
 		return ret;
+    }
+
+    uint64_t query_msg_id(std::string_view key) {
+        std::lock_guard<std::mutex> lock(msg_id_mutex_);
+        auto id = hash(key);
+        if (msg_names_.find(id) == msg_names_.end()) {
+            msg_names_.emplace(id, std::string(key.data(), key.length()));
+        }
+        return id;
+    }
+
+    std::string query_msg_name(uint64_t msg_id) {
+        std::lock_guard<std::mutex> lock(msg_id_mutex_);
+        auto iter = msg_names_.find(msg_id);
+        return iter == msg_names_.end() ? "" : iter->second;
+    }
+
+    void set_exception_callback(exception_callback_type exception_callback){
+        exception_callback_ = exception_callback;
     }
 
   private:
@@ -260,14 +293,11 @@ class router {
 
 
   private:
-    using invoke_type = std::function<bool (const std::shared_ptr<mrpc::connection>&,
-											const std::string&,
-                                            msg_id_t,
-                                            const std::string&)>;
     std::unordered_map<uint64_t, std::pair<std::string, invoke_type>> invokes_; // msg_id, <msg_name, invoke_func>
+    exception_callback_type exception_callback_;
 
-    std::mutex mutex_;
-    std::unordered_map<uint64_t, std::shared_ptr<connection>> conns_;
+    std::mutex msg_id_mutex_;
+    std::unordered_map<uint64_t, std::string> msg_names_;
 };
 } // namespace mrpc
 

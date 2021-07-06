@@ -17,10 +17,12 @@ class connection;
 struct awaitee;
 
 constexpr uint32_t MAX_MSG_SHRINK_LEN = 1024;		// 消息缓存大于此值做收缩
-constexpr uint32_t MAX_MSG_BODY_LEN = 8096*1024*10; // 最大消息长度
+constexpr uint32_t MAX_MSG_BODY_LEN = 1024*1024*8;  // 最大消息长度 8MB
 
 
-// 调用结果
+/**
+ *  call result
+ */
 template<typename RET>
 class req_result {
   public:
@@ -146,13 +148,11 @@ class callback_t : public std::enable_shared_from_this<callback_t> {
     std::string rpc_name_;
 };
 
-// 连接对象类
+/**
+ *  socket connection wrapper
+ */
 class connection : public std::enable_shared_from_this<connection> {
   public:
-    friend class server;
-    friend class client;
-    friend struct awaitee;
-
     static const constexpr time_t DEFAULT_TIMEOUT = 5000; //milliseconds
 
 #ifdef _MSG_FORMAT
@@ -179,9 +179,11 @@ class connection : public std::enable_shared_from_this<connection> {
     mrpc::router& router() {
         return router_;
     }
+
     uint64_t conn_id() {
         return conn_id_;
     }
+
     void set_conn_id(uint64_t conn_id) {
         conn_id_ = conn_id;
     }
@@ -189,6 +191,7 @@ class connection : public std::enable_shared_from_this<connection> {
     bool has_connected() {
         return has_connected_;
     }
+
     void set_connected(bool connected) {
         has_connected_ = connected;
     }
@@ -200,6 +203,7 @@ class connection : public std::enable_shared_from_this<connection> {
     void start() {
         do_read_header();
     }
+
     void close() {
         socket_.shutdown(asio::socket_base::shutdown_both);
     }
@@ -252,7 +256,7 @@ class connection : public std::enable_shared_from_this<connection> {
     template<msg_type_fmt FMT = DEFAULT_MSG_FORMAT, typename... Args>
     void notify(const std::string& rpc_name, Args&& ... args) {
         uint32_t msg_type = (1 << FMT) | (1 << MSG_IS_REQUEST) | (1 << MSG_IS_NO_RESPONSE);
-        auto msg_id = router::hash(rpc_name);
+        auto msg_id = router().query_msg_id(rpc_name);
 		msg_id_t id{ msg_type, msg_id, 0ull };
 		LOG_TRACE("notify, {}({})", rpc_name, id);
 		write(id, nlohmann::json::array_t{ std::forward<Args>(args)... });
@@ -275,7 +279,7 @@ class connection : public std::enable_shared_from_this<connection> {
 
     template<msg_type_fmt FMT = DEFAULT_MSG_FORMAT, typename... Args>
     auto async_call(const std::string& rpc_name, Args&&...args) {
-        auto msg_id = router::hash(rpc_name);
+        auto msg_id = router().query_msg_id(rpc_name);
         uint32_t msg_type = (1 << FMT) | (1 << MSG_IS_REQUEST) | (1 << MSG_IS_FUTURE);
         auto future_msg = std::make_shared<future_msg_info>();
         auto future = future_msg->promise.get_future();
@@ -294,7 +298,7 @@ class connection : public std::enable_shared_from_this<connection> {
 
     template<std::size_t TIMEOUT = DEFAULT_TIMEOUT, msg_type_fmt FMT = DEFAULT_MSG_FORMAT, typename... Args>
     void  async_call(callback_t::callback_func_type cb, const std::string& rpc_name, Args&&...args) {
-        auto msg_id = router::hash(rpc_name);
+        auto msg_id = router().query_msg_id(rpc_name);
         uint32_t msg_type = (1 << FMT) | (1 << MSG_IS_REQUEST) | (1 << MSG_IS_CALLBACK);
 #if ASIO_VERSION >= 101800
         callback_t t(socket_.get_executor(), cb, TIMEOUT);
@@ -323,7 +327,7 @@ class connection : public std::enable_shared_from_this<connection> {
     task_awaitable<RET> coro_call(const std::string& rpc_name, Args&&...args) {
 
         uint64_t req_id = next_req_id();
-        auto msg_id = router::hash(rpc_name);
+        auto msg_id = router().query_msg_id(rpc_name);
 		uint32_t msg_type = ((1 << FMT) | (1 << MSG_IS_REQUEST) | (1 << MSG_IS_COROUTINE));
 		msg_id_t id{ msg_type, msg_id, req_id };
 		LOG_TRACE("coro_call, {}({})", rpc_name, id);
@@ -437,10 +441,15 @@ class connection : public std::enable_shared_from_this<connection> {
                 if (ec != asio::error::eof && ec != asio::error::connection_reset) {
                     LOG_ERROR("read header error: {} code：{} ", ec.message(), ec.value());
                 }
+
                 on_closed();
                 return;
             }
-			LOG_DEBUG("recv *************: {}", req_id_);
+            msg_type_ = ntohl(msg_type_);
+            msg_id_ = ntohll(msg_id_);
+            req_id_ = ntohll(req_id_);
+            msg_len_ = ntohl(msg_len_);
+			LOG_TRACE("recv type: {} id: {} req: {} len: {}", msg_type_, msg_id_, req_id_, msg_len_);
             if (msg_len_ > MAX_MSG_BODY_LEN) {
                 on_closed();
                 LOG_ERROR("msg length over max: {}", msg_len_);
@@ -452,6 +461,7 @@ class connection : public std::enable_shared_from_this<connection> {
             do_read_body();
         });
     }
+
     void do_read_body() {
         auto self(shared_from_this());
 
@@ -480,8 +490,8 @@ class connection : public std::enable_shared_from_this<connection> {
             }
 
             if (msg_body_.length() > MAX_MSG_SHRINK_LEN) {
-                // 正常消息不超过8k
-                msg_body_.clear();
+                // 正常消息不超过1KB, 超过
+                msg_body_.resize(MAX_MSG_SHRINK_LEN);
                 msg_body_.shrink_to_fit();
             }
             do_read_header();
@@ -533,14 +543,12 @@ class connection : public std::enable_shared_from_this<connection> {
             std::lock_guard<std::mutex> lock(cb_mtx_);
             auto iter = callback_map_.find(req_id_);
             if (iter != callback_map_.end()) {
-                LOG_TRACE("rpc response, msg id: {}({})",
-                          iter->second->rpc_name(), id);
                 pcallback = iter->second;
                 callback_map_.erase(iter);
             }
         }
         if (pcallback == nullptr) {
-            LOG_ERROR("recv unknow rpc response, msg id: {} ", id);
+            LOG_ERROR("response not found, request msg id: {} ", id);
             return;
         }
         uint32_t err_code = 0;
@@ -548,7 +556,7 @@ class connection : public std::enable_shared_from_this<connection> {
         nlohmann::json* pret = nullptr;
 
         auto json = router::decode(id.msg_type, msg_body_);
-        LOG_TRACE("rpc response, msg id: {}({}), content: {}",
+        LOG_TRACE("response, msg id: {}({}), content: {}",
                           pcallback->rpc_name(), id, json.dump());
         if (!json.is_array() || json.size() < 2) {
             err_code = 408;
@@ -600,6 +608,11 @@ class connection : public std::enable_shared_from_this<connection> {
 			buffers[2] = asio::buffer(&id.req_id, sizeof(id.req_id));
 			buffers[3] = asio::buffer(&write_size_, sizeof(write_size_));
 			buffers[4] = asio::buffer(data.data(), write_size_);
+
+            id.msg_type = htonl(id.msg_type);
+            id.msg_id = htonll(id.msg_id);
+            id.req_id = htonll(id.req_id);
+            write_size_ = htonl(write_size_);
 		}
 		auto self(shared_from_this());
 		asio::async_write(socket_, buffers, [this, self](const std::error_code& ec, const size_t length) {
@@ -653,7 +666,62 @@ class connection : public std::enable_shared_from_this<connection> {
 	std::deque<std::pair<msg_id_t, std::string>> write_queue_;
 	uint32_t write_size_ = 0;
     void* user_data_ = nullptr;
-};
+}; // class connection
+
+
+template<typename Function, typename SelfClass>
+bool mrpc::router::invoke_callback(Function f, SelfClass* self,
+                                const std::shared_ptr<connection>& conn,
+								const std::string& func_name,
+                                msg_id_t id,
+                                const std::string& buffer) {
+    using noclass_tp_type = std::tuple<const std::shared_ptr<connection>&>;
+    using class_tp_type = std::tuple<SelfClass*, const std::shared_ptr<connection>&>;
+    using tp_header_type = std::conditional_t<std::is_null_pointer_v<SelfClass>, noclass_tp_type, class_tp_type>;
+    bool is_no_response = id.msg_type & (1 << MSG_IS_NO_RESPONSE);
+
+    if (id.msg_type & (1 << MSG_FMT_RAW)) {
+        if constexpr (function_traits<Function>::argc == 2) {
+            nlohmann::json jret;
+            using first_p_type = std::tuple_element_t<0, typename function_traits<Function>::args_tuple>;
+            using second_p_type = std::tuple_element_t<1, typename function_traits<Function>::args_tuple>;
+            // 检查前两个参数类型是否为connection 和 string
+            if constexpr (std::is_same_v<first_p_type, std::shared_ptr<connection>> && std::is_same_v<second_p_type, std::string>) {
+                if constexpr (std::is_void_v<function_traits<Function>::return_type>) {
+                    f(conn, buffer);
+                } else {
+                    jret = f(conn, buffer);
+                }
+                return !is_no_response ? conn->response(id, status::ok, "ok", jret) : true;
+            }
+        }
+        return !is_no_response ? conn->response(id, status::internal_server_error, "internal error", nullptr) : true;
+    }
+
+    typename function_traits<Function>::args_tuple args;
+    nlohmann::json json = decode(id.msg_type, buffer);
+    if (json.size() < function_traits<Function>::argc) {
+        // 为了兼容性考虑，函数参数大于接受的参数，自动补全缺失的参数
+        LOG_WARN("msg: {} parameter not full", id);
+        parameter_extend(json, args, std::make_index_sequence<function_traits<Function>::argc> {});
+    }
+    LOG_TRACE("recv msg: {}({}), content: {}", func_name, id, json.dump());
+    nlohmann::from_json(json, args);
+
+    std::unique_ptr<tp_header_type> tp;
+    if constexpr (std::is_null_pointer_v<SelfClass>) {
+        tp = std::make_unique<tp_header_type>(conn);
+    } else {
+        tp = std::make_unique<tp_header_type>(self, conn);
+    }
+    nlohmann::json jret;
+    if constexpr (std::is_void_v<typename function_traits<Function>::return_type>) {
+        std::apply(f, std::tuple_cat(std::move(*tp), std::move(args)));
+    } else {
+        jret = std::apply(f, std::tuple_cat(std::move(*tp), std::move(args)));
+    }
+    return !is_no_response ? conn->response(id, status::ok, "ok", jret) : true;
+}
 
 } // namespace mrpc
 #endif // MRPC_CONNECTION_HPP

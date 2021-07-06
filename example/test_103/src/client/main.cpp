@@ -35,27 +35,14 @@ int main() {
     wlog::logger::get().init("logs/" PROJECT_NAME ".log");
     LOG_TRACE("main thread: {}", std::this_thread::get_id());
 
-    std::vector<std::thread> ts;
-    for (size_t i = 0; i < 1; i++)
-    {
-        ts.push_back(std::move(std::thread([](){
-            LOG_TRACE("work thread: {}", std::this_thread::get_id());
-
-            client::get().run();
-        })));
-    }
+    client::get().run();
 
     auto conn = client::get().connect("127.0.0.1", 3333);
     if (conn == nullptr) return 1;
 
     test_coro(conn);
 
-    for (auto &&t : ts)
-    {
-        t.join();
-    }
-
-    client::get().shutdown();
+    client::get().wait_shutdown();
 	wlog::logger::get().shutdown();
     return 0;
 }

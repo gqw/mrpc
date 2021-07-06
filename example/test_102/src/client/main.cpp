@@ -10,9 +10,7 @@ using namespace mrpc;
 int main() {
     wlog::logger::get().init("logs/" PROJECT_NAME ".log");
 
-    std::thread t([](){
-        client::get().run();
-    });
+    client::get().run();
     auto conn = client::get().connect("127.0.0.1", 3333);
     if (conn == nullptr) return 1;
 
@@ -24,7 +22,7 @@ int main() {
         }
     }, "test_add", 11, 12);
 
-    t.join();
+    client::get().wait_shutdown();
     wlog::logger::get().shutdown();
     return 0;
 }
