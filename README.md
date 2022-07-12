@@ -85,7 +85,3 @@ task<uint32_t> test_coro(connection::cptr conn) {
     2. nlohmann/json
     3. spdlog
 
-
-https://www.cnblogs.com/xiaolincoding/p/11437231.html
-https://stackoverflow.com/questions/1661529/is-meyers-implementation-of-the-singleton-pattern-thread-safe
-https://eel.is/c++draft/stmt.dcl
